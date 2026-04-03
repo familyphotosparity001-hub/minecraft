@@ -1,82 +1,69 @@
-import os, subprocess, threading, time, re
+import os, subprocess, threading, time, re, sys
 
-# ── Environment ──────────────────────────────────────────
 os.environ['DISPLAY'] = ':1'
 os.environ['HOME'] = '/root'
-os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'autolaunch:'
 
 def run(cmd):
-    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    print(f"[RUN] {cmd}")
+    if result.stdout: print(result.stdout)
+    if result.stderr: print(result.stderr)
+    return result
 
 def popen(cmd, **kwargs):
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
+    print(f"[START] {cmd}")
+    return subprocess.Popen(cmd, **kwargs)
 
-print("⏳ Starting desktop environment...")
-
-# ── Writable dirs for Firefox/dconf ──────────────────────
+sys.stdout.flush()
+print("🔵 Step 1: Creating dirs...")
+sys.stdout.flush()
 run("mkdir -p /root/.config/ibus/bus")
 run("mkdir -p /root/.cache/dconf")
 run("chmod -R 777 /root/.config /root/.cache")
 
-# ── Start virtual display ─────────────────────────────────
-popen(['Xvfb', ':1', '-screen', '0', '1280x800x24', '-ac'])
+print("🔵 Step 2: Starting Xvfb...")
+sys.stdout.flush()
+xvfb = subprocess.Popen(
+    ['Xvfb', ':1', '-screen', '0', '1280x800x24', '-ac'],
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+)
 time.sleep(2)
-print("✅ Virtual display started")
+print(f"Xvfb PID: {xvfb.pid}, running: {xvfb.poll() is None}")
+sys.stdout.flush()
 
-# ── Start DBus ────────────────────────────────────────────
-run("dbus-launch --auto-syntax")
-time.sleep(1)
-
-# ── Start VNC server ──────────────────────────────────────
-popen([
-    'x11vnc',
-    '-display', ':1',
-    '-nopw',
-    '-listen', 'localhost',
-    '-forever',
-    '-shared',
-    '-noxdamage',
-    '-noxfixes',
-    '-noxrecord',
-    '-quiet'
-])
+print("🔵 Step 3: Starting x11vnc...")
+sys.stdout.flush()
+vnc = subprocess.Popen(
+    ['x11vnc', '-display', ':1', '-nopw', '-listen', 'localhost', '-forever', '-shared', '-quiet'],
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+)
 time.sleep(2)
-print("✅ VNC server started")
+print(f"x11vnc PID: {vnc.pid}, running: {vnc.poll() is None}")
+sys.stdout.flush()
 
-# ── Start XFCE desktop ────────────────────────────────────
-popen(['startxfce4'], env={**os.environ, 'DISPLAY': ':1'})
+print("🔵 Step 4: Starting XFCE...")
+sys.stdout.flush()
+xfce = subprocess.Popen(
+    ['startxfce4'],
+    env={**os.environ, 'DISPLAY': ':1'},
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+)
 time.sleep(6)
-print("✅ XFCE desktop started")
+print(f"XFCE PID: {xfce.pid}, running: {xfce.poll() is None}")
+sys.stdout.flush()
 
-# ── Desktop tweaks ────────────────────────────────────────
-run("DISPLAY=:1 xfconf-query -c xfwm4 -p /general/use_compositing -s false")
-run("DISPLAY=:1 xfconf-query -c xsettings -p /Net/ThemeName -s 'Arc-Dark'")
-run("DISPLAY=:1 xfconf-query -c xsettings -p /Net/IconThemeName -s 'Papirus-Dark'")
-run("DISPLAY=:1 xfconf-query -c xsettings -p /Gtk/FontName -s 'Roboto 11'")
-run("DISPLAY=:1 xset s off")
-run("DISPLAY=:1 xset s noblank")
-run("DISPLAY=:1 xset -dpms")
-
-# ── Keep awake thread ─────────────────────────────────────
-def keep_awake():
-    while True:
-        subprocess.run(
-            ['xdotool', 'mousemove_relative', '--', '1', '0'],
-            env={'DISPLAY': ':1'},
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        time.sleep(30)
-
-threading.Thread(target=keep_awake, daemon=True).start()
-
-# ── Start noVNC ───────────────────────────────────────────
-popen(['websockify', '--web', '/opt/novnc', '6080', 'localhost:5900'])
+print("🔵 Step 5: Starting noVNC...")
+sys.stdout.flush()
+novnc = subprocess.Popen(
+    ['websockify', '--web', '/opt/novnc', '6080', 'localhost:5900'],
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+)
 time.sleep(3)
-print("✅ noVNC started on port 6080")
+print(f"noVNC PID: {novnc.pid}, running: {novnc.poll() is None}")
+sys.stdout.flush()
 
-# ── Start Cloudflare tunnel ───────────────────────────────
-print("🚀 Starting Cloudflare tunnel...")
+print("🔵 Step 6: Starting Cloudflare tunnel...")
+sys.stdout.flush()
 cf = subprocess.Popen(
     ['cloudflared', 'tunnel', '--url', 'http://localhost:6080'],
     stdout=subprocess.PIPE,
@@ -84,36 +71,40 @@ cf = subprocess.Popen(
 )
 
 url_found = False
-for _ in range(90):
+for i in range(90):
     line = cf.stderr.readline().decode('utf-8', errors='ignore').strip()
     if line:
-        print(line)
+        print(f"[CF] {line}")
+        sys.stdout.flush()
     match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', line)
     if match:
         url = match.group(0)
         print(f"\n{'='*50}")
         print(f"✅ YOUR DESKTOP IS READY!")
-        print(f"🌐 Open this in your browser:")
-        print(f"\n   {url}/vnc.html\n")
+        print(f"🌐 {url}/vnc.html")
         print(f"{'='*50}\n")
+        sys.stdout.flush()
         url_found = True
         break
     time.sleep(1)
 
 if not url_found:
-    print("❌ Could not get Cloudflare URL - check logs above")
+    print("❌ Cloudflare tunnel failed")
+    # print what cloudflared said
+    out, err = cf.communicate(timeout=5)
+    print("STDOUT:", out.decode())
+    print("STDERR:", err.decode())
+    sys.stdout.flush()
 
-# ── Launch Firefox ────────────────────────────────────────
-time.sleep(2)
+print("🔵 Step 7: Launching Firefox...")
+sys.stdout.flush()
 subprocess.Popen(
     ['firefox', '--display=:1', '--no-sandbox'],
     env={**os.environ, 'DISPLAY': ':1', 'HOME': '/root'},
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.DEVNULL
+    stdout=subprocess.PIPE, stderr=subprocess.PIPE
 )
-print("✅ Firefox launched")
 
-# ── Keep alive ────────────────────────────────────────────
-print("⏱️  Session will last up to 6 hours")
+print("✅ All done! Keeping alive...")
+sys.stdout.flush()
 while True:
     time.sleep(5)
