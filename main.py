@@ -1,7 +1,6 @@
 # Desktop Initialization Block
 import os, subprocess, threading, time, re
 
-# Silence all output
 os.environ['DISPLAY'] = ':1'
 
 def run(cmd): subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -9,9 +8,7 @@ def popen(cmd, **kwargs): return subprocess.Popen(cmd, stdout=subprocess.DEVNULL
 
 print("⏳ Setting up your desktop, this might take a few minutes, grab yourself a Coffee meanwhile...")
 
-run("apt-get update -q")
-run("apt-get install -y xfce4 x11vnc xvfb wget arc-theme papirus-icon-theme fonts-roboto xdotool --fix-missing -q")
-run("pip install websockify -q")
+# No apt-get or pip here anymore — handled by yml
 
 if not os.path.exists('/opt/novnc'):
     run("git clone https://github.com/novnc/noVNC.git /opt/novnc -q")
@@ -56,7 +53,6 @@ for _ in range(30):
         break
     time.sleep(1)
 
-# Firefox install and launch (converted from ! commands)
 run("wget -q 'https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US' -O firefox.tar.xz")
 run("tar -xJf firefox.tar.xz -C /opt/")
 run("ln -sf /opt/firefox/firefox /usr/local/bin/firefox")
