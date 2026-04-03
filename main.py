@@ -8,8 +8,6 @@ def popen(cmd, **kwargs): return subprocess.Popen(cmd, stdout=subprocess.DEVNULL
 
 print("⏳ Setting up your desktop, this might take a few minutes, grab yourself a Coffee meanwhile...")
 
-# No apt-get or pip here anymore — handled by yml
-
 if not os.path.exists('/opt/novnc'):
     run("git clone https://github.com/novnc/noVNC.git /opt/novnc -q")
 
@@ -23,11 +21,13 @@ if not os.path.exists('/usr/local/bin/cloudflared'):
     run("chmod +x /usr/local/bin/cloudflared")
 
 popen(['Xvfb', ':1', '-screen', '0', '1280x800x24'])
-time.sleep(1)
+time.sleep(2)
+
 popen(['x11vnc', '-display', ':1', '-nopw', '-listen', 'localhost', '-forever', '-shared', '-ncache', '10', '-noxdamage'])
-time.sleep(1)
+time.sleep(2)
+
 popen(['startxfce4'], env={**os.environ, 'DISPLAY': ':1'})
-time.sleep(3)
+time.sleep(5)
 
 run("DISPLAY=:1 xfconf-query -c xfwm4 -p /general/use_compositing -s false")
 run("DISPLAY=:1 xfconf-query -c xsettings -p /Net/ThemeName -s 'Arc-Dark'")
@@ -42,23 +42,35 @@ def keep_awake():
 threading.Thread(target=keep_awake, daemon=True).start()
 
 popen(['websockify', '--web', '/opt/novnc', '6080', 'localhost:5900'])
-time.sleep(2)
+time.sleep(3)
 
-cf = subprocess.Popen(['cloudflared', 'tunnel', '--url', 'http://localhost:6080'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-for _ in range(30):
+print("🚀 Starting Cloudflare tunnel...")
+cf = subprocess.Popen(
+    ['cloudflared', 'tunnel', '--url', 'http://localhost:6080'],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE
+)
+
+url_found = False
+for _ in range(60):
     line = cf.stderr.readline().decode()
+    print(line.strip())  # show every line so we can debug
     match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', line)
     if match:
         print(f"\n✅ Your desktop is ready! Open this link:\n\n{match.group(0)}/vnc.html\n")
+        url_found = True
         break
     time.sleep(1)
 
-run("wget -q 'https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US' -O firefox.tar.xz")
-run("tar -xJf firefox.tar.xz -C /opt/")
-run("ln -sf /opt/firefox/firefox /usr/local/bin/firefox")
-print("Firefox installed")
+if not url_found:
+    print("❌ Cloudflare tunnel failed to start - check logs above")
 
-subprocess.Popen(['/opt/firefox/firefox'], env={'DISPLAY': ':1', 'HOME': '/root'})
+print("🖥️ Launching Firefox...")
+subprocess.Popen(
+    ['/opt/firefox/firefox', '--display=:1'],
+    env={**os.environ, 'DISPLAY': ':1', 'HOME': '/root'}
+)
 
+print("✅ Desktop is running, keeping alive...")
 while True:
     time.sleep(5)
