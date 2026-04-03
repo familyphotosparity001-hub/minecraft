@@ -1,49 +1,81 @@
-# Desktop Initialization Block
 import os, subprocess, threading, time, re
 
+# ── Environment ──────────────────────────────────────────
 os.environ['DISPLAY'] = ':1'
+os.environ['HOME'] = '/root'
+os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'autolaunch:'
 
-def run(cmd): subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-def popen(cmd, **kwargs): return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
+def run(cmd):
+    subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-print("⏳ Setting up your desktop, this might take a few minutes, grab yourself a Coffee meanwhile...")
+def popen(cmd, **kwargs):
+    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs)
 
-if not os.path.exists('/opt/novnc'):
-    run("git clone https://github.com/novnc/noVNC.git /opt/novnc -q")
+print("⏳ Starting desktop environment...")
 
-if not os.path.exists('/opt/firefox'):
-    run("wget -q 'https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US' -O firefox.tar.xz")
-    run("tar -xJf firefox.tar.xz -C /opt/")
-    run("ln -sf /opt/firefox/firefox /usr/local/bin/firefox")
+# ── Writable dirs for Firefox/dconf ──────────────────────
+run("mkdir -p /root/.config/ibus/bus")
+run("mkdir -p /root/.cache/dconf")
+run("chmod -R 777 /root/.config /root/.cache")
 
-if not os.path.exists('/usr/local/bin/cloudflared'):
-    run("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /usr/local/bin/cloudflared")
-    run("chmod +x /usr/local/bin/cloudflared")
-
-popen(['Xvfb', ':1', '-screen', '0', '1280x800x24'])
+# ── Start virtual display ─────────────────────────────────
+popen(['Xvfb', ':1', '-screen', '0', '1280x800x24', '-ac'])
 time.sleep(2)
+print("✅ Virtual display started")
 
-popen(['x11vnc', '-display', ':1', '-nopw', '-listen', 'localhost', '-forever', '-shared', '-ncache', '10', '-noxdamage'])
+# ── Start DBus ────────────────────────────────────────────
+run("dbus-launch --auto-syntax")
+time.sleep(1)
+
+# ── Start VNC server ──────────────────────────────────────
+popen([
+    'x11vnc',
+    '-display', ':1',
+    '-nopw',
+    '-listen', 'localhost',
+    '-forever',
+    '-shared',
+    '-noxdamage',
+    '-noxfixes',
+    '-noxrecord',
+    '-quiet'
+])
 time.sleep(2)
+print("✅ VNC server started")
 
+# ── Start XFCE desktop ────────────────────────────────────
 popen(['startxfce4'], env={**os.environ, 'DISPLAY': ':1'})
-time.sleep(5)
+time.sleep(6)
+print("✅ XFCE desktop started")
 
+# ── Desktop tweaks ────────────────────────────────────────
 run("DISPLAY=:1 xfconf-query -c xfwm4 -p /general/use_compositing -s false")
 run("DISPLAY=:1 xfconf-query -c xsettings -p /Net/ThemeName -s 'Arc-Dark'")
 run("DISPLAY=:1 xfconf-query -c xsettings -p /Net/IconThemeName -s 'Papirus-Dark'")
 run("DISPLAY=:1 xfconf-query -c xsettings -p /Gtk/FontName -s 'Roboto 11'")
-run("DISPLAY=:1 xset s off && DISPLAY=:1 xset s noblank")
+run("DISPLAY=:1 xset s off")
+run("DISPLAY=:1 xset s noblank")
+run("DISPLAY=:1 xset -dpms")
 
+# ── Keep awake thread ─────────────────────────────────────
 def keep_awake():
     while True:
-        subprocess.run(['xdotool', 'mousemove_relative', '--', '1', '0'], env={'DISPLAY': ':1'}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ['xdotool', 'mousemove_relative', '--', '1', '0'],
+            env={'DISPLAY': ':1'},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
         time.sleep(30)
+
 threading.Thread(target=keep_awake, daemon=True).start()
 
+# ── Start noVNC ───────────────────────────────────────────
 popen(['websockify', '--web', '/opt/novnc', '6080', 'localhost:5900'])
 time.sleep(3)
+print("✅ noVNC started on port 6080")
 
+# ── Start Cloudflare tunnel ───────────────────────────────
 print("🚀 Starting Cloudflare tunnel...")
 cf = subprocess.Popen(
     ['cloudflared', 'tunnel', '--url', 'http://localhost:6080'],
@@ -52,25 +84,36 @@ cf = subprocess.Popen(
 )
 
 url_found = False
-for _ in range(60):
-    line = cf.stderr.readline().decode()
-    print(line.strip())  # show every line so we can debug
+for _ in range(90):
+    line = cf.stderr.readline().decode('utf-8', errors='ignore').strip()
+    if line:
+        print(line)
     match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', line)
     if match:
-        print(f"\n✅ Your desktop is ready! Open this link:\n\n{match.group(0)}/vnc.html\n")
+        url = match.group(0)
+        print(f"\n{'='*50}")
+        print(f"✅ YOUR DESKTOP IS READY!")
+        print(f"🌐 Open this in your browser:")
+        print(f"\n   {url}/vnc.html\n")
+        print(f"{'='*50}\n")
         url_found = True
         break
     time.sleep(1)
 
 if not url_found:
-    print("❌ Cloudflare tunnel failed to start - check logs above")
+    print("❌ Could not get Cloudflare URL - check logs above")
 
-print("🖥️ Launching Firefox...")
+# ── Launch Firefox ────────────────────────────────────────
+time.sleep(2)
 subprocess.Popen(
-    ['/opt/firefox/firefox', '--display=:1'],
-    env={**os.environ, 'DISPLAY': ':1', 'HOME': '/root'}
+    ['firefox', '--display=:1', '--no-sandbox'],
+    env={**os.environ, 'DISPLAY': ':1', 'HOME': '/root'},
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL
 )
+print("✅ Firefox launched")
 
-print("✅ Desktop is running, keeping alive...")
+# ── Keep alive ────────────────────────────────────────────
+print("⏱️  Session will last up to 6 hours")
 while True:
     time.sleep(5)
