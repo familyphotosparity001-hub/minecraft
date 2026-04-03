@@ -1,13 +1,12 @@
-name: Run Python Script
+name: Linux Desktop
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  run-python:
+  desktop:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -16,15 +15,34 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y xfce4 x11vnc xvfb wget arc-theme papirus-icon-theme fonts-roboto xdotool --fix-missing
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+          sudo apt-get install -y \
+            xfce4 \
+            xfce4-terminal \
+            x11vnc \
+            xvfb \
+            dbus-x11 \
+            wget \
+            curl \
+            git \
+            arc-theme \
+            papirus-icon-theme \
+            fonts-roboto \
+            xdotool \
+            firefox \
+            --fix-missing
 
       - name: Install Python dependencies
         run: pip install websockify
 
-      - name: Run script
+      - name: Setup noVNC
+        run: |
+          git clone https://github.com/novnc/noVNC.git /opt/novnc
+          ln -sf /opt/novnc/vnc.html /opt/novnc/index.html
+
+      - name: Install Cloudflared
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /usr/local/bin/cloudflared
+          chmod +x /usr/local/bin/cloudflared
+
+      - name: Run Desktop
         run: python main.py
