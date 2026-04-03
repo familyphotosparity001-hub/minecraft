@@ -1,7 +1,10 @@
 import os, subprocess, threading, time, re, sys
 
+# Fix - use runner's actual home not /root
+HOME = os.path.expanduser('~')  # gets actual home = /home/runner
 os.environ['DISPLAY'] = ':1'
-os.environ['HOME'] = '/root'
+os.environ['HOME'] = HOME
+os.environ['XDG_RUNTIME_DIR'] = f'/tmp/runtime-runner'
 
 def run(cmd):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -17,9 +20,11 @@ def popen(cmd, **kwargs):
 sys.stdout.flush()
 print("🔵 Step 1: Creating dirs...")
 sys.stdout.flush()
-run("mkdir -p /root/.config/ibus/bus")
-run("mkdir -p /root/.cache/dconf")
-run("chmod -R 777 /root/.config /root/.cache")
+run(f"mkdir -p {HOME}/.config/ibus/bus")
+run(f"mkdir -p {HOME}/.cache/dconf")
+run(f"chmod -R 777 {HOME}/.config {HOME}/.cache")
+run("mkdir -p /tmp/runtime-runner")
+run("chmod 700 /tmp/runtime-runner")
 
 print("🔵 Step 2: Starting Xvfb...")
 sys.stdout.flush()
@@ -45,7 +50,7 @@ print("🔵 Step 4: Starting XFCE...")
 sys.stdout.flush()
 xfce = subprocess.Popen(
     ['startxfce4'],
-    env={**os.environ, 'DISPLAY': ':1'},
+    env={**os.environ, 'DISPLAY': ':1', 'HOME': HOME},
     stdout=subprocess.PIPE, stderr=subprocess.PIPE
 )
 time.sleep(6)
@@ -90,17 +95,13 @@ for i in range(90):
 
 if not url_found:
     print("❌ Cloudflare tunnel failed")
-    # print what cloudflared said
-    out, err = cf.communicate(timeout=5)
-    print("STDOUT:", out.decode())
-    print("STDERR:", err.decode())
     sys.stdout.flush()
 
 print("🔵 Step 7: Launching Firefox...")
 sys.stdout.flush()
 subprocess.Popen(
     ['firefox', '--display=:1', '--no-sandbox'],
-    env={**os.environ, 'DISPLAY': ':1', 'HOME': '/root'},
+    env={**os.environ, 'DISPLAY': ':1', 'HOME': HOME},
     stdout=subprocess.PIPE, stderr=subprocess.PIPE
 )
 
