@@ -13,10 +13,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y xfce4 x11vnc xvfb wget arc-theme papirus-icon-theme fonts-roboto xdotool --fix-missing
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install websockify
 
       - name: Run script
         run: python main.py
