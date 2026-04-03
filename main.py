@@ -1,4 +1,4 @@
-  # @title Desktop Initialization Block
+# Desktop Initialization Block
 import os, subprocess, threading, time, re
 
 # Silence all output
@@ -56,19 +56,13 @@ for _ in range(30):
         break
     time.sleep(1)
 
-
-
-
-
-!wget -q "https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US" -O firefox.tar.xz
-!tar -xJf firefox.tar.xz -C /opt/
-!ln -sf /opt/firefox/firefox /usr/local/bin/firefox
+# Firefox install and launch (converted from ! commands)
+run("wget -q 'https://download.mozilla.org/?product=firefox-latest&os=linux64&lang=en-US' -O firefox.tar.xz")
+run("tar -xJf firefox.tar.xz -C /opt/")
+run("ln -sf /opt/firefox/firefox /usr/local/bin/firefox")
 print("Firefox installed")
-import subprocess
+
 subprocess.Popen(['/opt/firefox/firefox'], env={'DISPLAY': ':1', 'HOME': '/root'})
 
-
-
-import time
 while True:
-  time.sleep(5)
+    time.sleep(5)
