@@ -1,48 +1,66 @@
-name: Linux Desktop
+name: Flask Math Server
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  desktop:
+  run-server:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install flask flask-cors
+
+      - name: Start Flask server
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y \
-            xfce4 \
-            xfce4-terminal \
-            x11vnc \
-            xvfb \
-            dbus-x11 \
-            wget \
-            curl \
-            git \
-            arc-theme \
-            papirus-icon-theme \
-            fonts-roboto \
-            xdotool \
-            firefox \
-            --fix-missing
+          python main.py &
+          sleep 3
+          echo "✅ Flask is up"
 
-      - name: Install Python dependencies
-        run: pip install websockify
-
-      - name: Setup noVNC
+      - name: Expose via localhost.run, save and push URL
         run: |
-          git clone https://github.com/novnc/noVNC.git /opt/novnc
-          ln -sf /opt/novnc/vnc.html /opt/novnc/index.html
+          ssh -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              -R 80:localhost:5000 \
+              localhost.run 2>&1 | tee tunnel.log &
 
-      - name: Install Cloudflared
-        run: |
-          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /usr/local/bin/cloudflared
-          chmod +x /usr/local/bin/cloudflared
+          sleep 6
 
-      - name: Run Desktop
-        run: python main.py
+          PUBLIC_URL=$(grep -oP 'https://[a-zA-Z0-9\-]+\.localhost\.run' tunnel.log | head -1)
+
+          echo ""
+          echo "================================================"
+          echo "  🚀 SERVER URL: $PUBLIC_URL"
+          echo "================================================"
+          echo ""
+          echo "  Endpoints:"
+          echo "  GET $PUBLIC_URL/add?a=5&b=3"
+          echo "  GET $PUBLIC_URL/subtract?a=10&b=4"
+          echo "  GET $PUBLIC_URL/multiply?a=6&b=7"
+          echo "  GET $PUBLIC_URL/divide?a=20&b=4"
+          echo "  GET $PUBLIC_URL/power?a=2&b=8"
+          echo "  GET $PUBLIC_URL/modulo?a=17&b=5"
+          echo ""
+
+          echo "$PUBLIC_URL" > server_url.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add server_url.txt
+          git commit -m "chore: update server_url.txt [skip ci]"
+          git push
+
+          echo "✅ server_url.txt pushed to repo"
+
+          sleep 7200
