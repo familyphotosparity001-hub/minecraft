@@ -28,26 +28,31 @@ jobs:
           sleep 3
           echo "✅ Flask is up"
 
+      - name: Generate throwaway SSH key
+        run: |
+          ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -q
+          echo "✅ SSH key generated"
+
       - name: Expose via localhost.run, save and push URL
         run: |
           ssh -o StrictHostKeyChecking=no \
               -o ServerAliveInterval=30 \
+              -i ~/.ssh/id_ed25519 \
               -R 80:localhost:5000 \
               localhost.run 2>&1 | tee tunnel.log &
 
-          # Give tunnel time to establish
           sleep 10
 
           echo "--- raw tunnel.log ---"
           cat tunnel.log
           echo "----------------------"
 
-          # Extract any https URL from the log
-          PUBLIC_URL=$(grep -oP 'https://\S+' tunnel.log | grep -v 'localhost.run$' | head -1)
+          # localhost.run prints the URL in format: https://xxxx.localhost.run
+          PUBLIC_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.lhrtunnel\.link' tunnel.log | head -1)
 
-          # Fallback: grab any line with a dot and https
+          # Fallback for older format
           if [ -z "$PUBLIC_URL" ]; then
-            PUBLIC_URL=$(grep -oP 'https://[^\s]+' tunnel.log | head -1)
+            PUBLIC_URL=$(grep -oP 'https://[a-zA-Z0-9-]+\.localhost\.run' tunnel.log | head -1)
           fi
 
           echo ""
@@ -56,7 +61,7 @@ jobs:
           echo "================================================"
 
           if [ -z "$PUBLIC_URL" ]; then
-            echo "❌ ERROR: Could not extract URL from tunnel.log"
+            echo "❌ ERROR: Could not extract URL"
             exit 1
           fi
 
