@@ -1,111 +1,70 @@
-import os, subprocess, threading, time, re, sys
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import os
 
-# Fix - use runner's actual home not /root
-HOME = os.path.expanduser('~')  # gets actual home = /home/runner
-os.environ['DISPLAY'] = ':1'
-os.environ['HOME'] = HOME
-os.environ['XDG_RUNTIME_DIR'] = f'/tmp/runtime-runner'
+app = Flask(__name__)
+CORS(app)
 
-def run(cmd):
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    print(f"[RUN] {cmd}")
-    if result.stdout: print(result.stdout)
-    if result.stderr: print(result.stderr)
-    return result
+def error(msg, code=400):
+    return jsonify({"success": False, "error": msg}), code
 
-def popen(cmd, **kwargs):
-    print(f"[START] {cmd}")
-    return subprocess.Popen(cmd, **kwargs)
+def validate(a, b):
+    try:
+        return float(a), float(b), None
+    except (TypeError, ValueError):
+        return None, None, error("Both 'a' and 'b' must be valid numbers")
 
-sys.stdout.flush()
-print("🔵 Step 1: Creating dirs...")
-sys.stdout.flush()
-run(f"mkdir -p {HOME}/.config/ibus/bus")
-run(f"mkdir -p {HOME}/.cache/dconf")
-run(f"chmod -R 777 {HOME}/.config {HOME}/.cache")
-run("mkdir -p /tmp/runtime-runner")
-run("chmod 700 /tmp/runtime-runner")
+@app.route("/")
+def index():
+    url = ""
+    try:
+        with open("server_url.txt") as f:
+            url = f.read().strip()
+    except FileNotFoundError:
+        pass
+    return jsonify({
+        "status": "running",
+        "public_url": url,
+        "endpoints": ["/add", "/subtract", "/multiply", "/divide", "/power", "/modulo"]
+    })
 
-print("🔵 Step 2: Starting Xvfb...")
-sys.stdout.flush()
-xvfb = subprocess.Popen(
-    ['Xvfb', ':1', '-screen', '0', '1280x800x24', '-ac'],
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE
-)
-time.sleep(2)
-print(f"Xvfb PID: {xvfb.pid}, running: {xvfb.poll() is None}")
-sys.stdout.flush()
+@app.route("/add")
+def add():
+    a, b, err = validate(request.args.get("a"), request.args.get("b"))
+    if err: return err
+    return jsonify({"success": True, "operation": "addition", "a": a, "b": b, "result": a + b})
 
-print("🔵 Step 3: Starting x11vnc...")
-sys.stdout.flush()
-vnc = subprocess.Popen(
-    ['x11vnc', '-display', ':1', '-nopw', '-listen', 'localhost', '-forever', '-shared', '-quiet'],
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE
-)
-time.sleep(2)
-print(f"x11vnc PID: {vnc.pid}, running: {vnc.poll() is None}")
-sys.stdout.flush()
+@app.route("/subtract")
+def subtract():
+    a, b, err = validate(request.args.get("a"), request.args.get("b"))
+    if err: return err
+    return jsonify({"success": True, "operation": "subtraction", "a": a, "b": b, "result": a - b})
 
-print("🔵 Step 4: Starting XFCE...")
-sys.stdout.flush()
-xfce = subprocess.Popen(
-    ['startxfce4'],
-    env={**os.environ, 'DISPLAY': ':1', 'HOME': HOME},
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE
-)
-time.sleep(6)
-print(f"XFCE PID: {xfce.pid}, running: {xfce.poll() is None}")
-sys.stdout.flush()
+@app.route("/multiply")
+def multiply():
+    a, b, err = validate(request.args.get("a"), request.args.get("b"))
+    if err: return err
+    return jsonify({"success": True, "operation": "multiplication", "a": a, "b": b, "result": a * b})
 
-print("🔵 Step 5: Starting noVNC...")
-sys.stdout.flush()
-novnc = subprocess.Popen(
-    ['websockify', '--web', '/opt/novnc', '6080', 'localhost:5900'],
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE
-)
-time.sleep(3)
-print(f"noVNC PID: {novnc.pid}, running: {novnc.poll() is None}")
-sys.stdout.flush()
+@app.route("/divide")
+def divide():
+    a, b, err = validate(request.args.get("a"), request.args.get("b"))
+    if err: return err
+    if b == 0: return error("Cannot divide by zero")
+    return jsonify({"success": True, "operation": "division", "a": a, "b": b, "result": a / b})
 
-print("🔵 Step 6: Starting Cloudflare tunnel...")
-sys.stdout.flush()
-cf = subprocess.Popen(
-    ['cloudflared', 'tunnel', '--url', 'http://localhost:6080'],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE
-)
+@app.route("/power")
+def power():
+    a, b, err = validate(request.args.get("a"), request.args.get("b"))
+    if err: return err
+    return jsonify({"success": True, "operation": "power", "a": a, "b": b, "result": a ** b})
 
-url_found = False
-for i in range(90):
-    line = cf.stderr.readline().decode('utf-8', errors='ignore').strip()
-    if line:
-        print(f"[CF] {line}")
-        sys.stdout.flush()
-    match = re.search(r'https://[a-z0-9\-]+\.trycloudflare\.com', line)
-    if match:
-        url = match.group(0)
-        print(f"\n{'='*50}")
-        print(f"✅ YOUR DESKTOP IS READY!")
-        print(f"🌐 {url}/vnc.html")
-        print(f"{'='*50}\n")
-        sys.stdout.flush()
-        url_found = True
-        break
-    time.sleep(1)
+@app.route("/modulo")
+def modulo():
+    a, b, err = validate(request.args.get("a"), request.args.get("b"))
+    if err: return err
+    if b == 0: return error("Cannot modulo by zero")
+    return jsonify({"success": True, "operation": "modulo", "a": a, "b": b, "result": a % b})
 
-if not url_found:
-    print("❌ Cloudflare tunnel failed")
-    sys.stdout.flush()
-
-print("🔵 Step 7: Launching Firefox...")
-sys.stdout.flush()
-subprocess.Popen(
-    ['firefox', '--display=:1', '--no-sandbox'],
-    env={**os.environ, 'DISPLAY': ':1', 'HOME': HOME},
-    stdout=subprocess.PIPE, stderr=subprocess.PIPE
-)
-
-print("✅ All done! Keeping alive...")
-sys.stdout.flush()
-while True:
-    time.sleep(5)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
