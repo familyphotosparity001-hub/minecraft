@@ -35,25 +35,33 @@ jobs:
               -R 80:localhost:5000 \
               localhost.run 2>&1 | tee tunnel.log &
 
-          sleep 6
+          # Give tunnel time to establish
+          sleep 10
 
-          PUBLIC_URL=$(grep -oP 'https://[a-zA-Z0-9\-]+\.localhost\.run' tunnel.log | head -1)
+          echo "--- raw tunnel.log ---"
+          cat tunnel.log
+          echo "----------------------"
+
+          # Extract any https URL from the log
+          PUBLIC_URL=$(grep -oP 'https://\S+' tunnel.log | grep -v 'localhost.run$' | head -1)
+
+          # Fallback: grab any line with a dot and https
+          if [ -z "$PUBLIC_URL" ]; then
+            PUBLIC_URL=$(grep -oP 'https://[^\s]+' tunnel.log | head -1)
+          fi
 
           echo ""
           echo "================================================"
           echo "  🚀 SERVER URL: $PUBLIC_URL"
           echo "================================================"
-          echo ""
-          echo "  Endpoints:"
-          echo "  GET $PUBLIC_URL/add?a=5&b=3"
-          echo "  GET $PUBLIC_URL/subtract?a=10&b=4"
-          echo "  GET $PUBLIC_URL/multiply?a=6&b=7"
-          echo "  GET $PUBLIC_URL/divide?a=20&b=4"
-          echo "  GET $PUBLIC_URL/power?a=2&b=8"
-          echo "  GET $PUBLIC_URL/modulo?a=17&b=5"
-          echo ""
+
+          if [ -z "$PUBLIC_URL" ]; then
+            echo "❌ ERROR: Could not extract URL from tunnel.log"
+            exit 1
+          fi
 
           echo "$PUBLIC_URL" > server_url.txt
+          echo "✅ Saved: $(cat server_url.txt)"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
